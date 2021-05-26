@@ -1,52 +1,20 @@
 const redis = require('redis')
 const redisClient = redis.createClient()
-const moment = require('moment')
+const requestIp = require('request-ip');
+
 redisClient.on("ready", function () {
     console.log("Redis connection ready ");
 });
 const rateLimiter = (req, res, next) => {
-    redisClient.exists(req.ip, (err, reply) => {
-        if (err) {
-            console.log("Redis not working...")
-            system.exit(0)
-        }
-        if (reply === 1) {
-            // user exists
-            // check time interval
-            redisClient.get(req.ip, (err, reply) => {
-                let data = JSON.parse(reply)
-                let currentTime = moment().unix()
-                let difference = (currentTime - data.startTime) / 60
-                if (difference >= 1) {
-                    let body = {
-                        'count': 1,
-                        'startTime': moment().unix()
-                    }
-                    redisClient.set(req.ip, JSON.stringify(body))
-                    // allow the request
-                    next()
-                }
-                if (difference < 1) {
-                    if (data.count > 2) {
-                        return res.status(429).json({ "error": 1, "message": "Too Many Requests..." })
-                    }
-                    // update the count and allow the request
-                    data.count++
-                    redisClient.set(req.ip, JSON.stringify(data))
-                    // allow request
-                    next()
-                }
-            })
+    redisClient.get('connect' + requestIp.getClientIp(req), (err, reply) => {
+        if (reply >= 3) {
+            return res.status(429).json({ "error": 1, "message": "Too Many Requests..." })
+        } else if (reply > 0) {
+            redisClient.incrby('connect' + requestIp.getClientIp(req), 1);
         } else {
-            // add new user
-            let body = {
-                'count': 1,
-                'startTime': moment().unix()
-            }
-            redisClient.set(req.ip, JSON.stringify(body))
-            // allow request
-            next()
+            redisClient.set('connect' + requestIp.getClientIp(req), 1, 'EX', 60);
         }
+        next()
     })
 }
 module.exports = rateLimiter
